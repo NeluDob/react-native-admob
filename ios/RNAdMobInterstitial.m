@@ -1,5 +1,6 @@
 #import "RNAdMobInterstitial.h"
 #import "RNAdMobUtils.h"
+#import <React/RCTLog.h>
 
 #if __has_include(<React/RCTUtils.h>)
 #import <React/RCTUtils.h>
@@ -16,13 +17,9 @@ static NSString *const kEventAdLeftApplication = @"interstitialAdLeftApplication
 
 @implementation RNAdMobInterstitial
 {
-    GADInterstitial  *_interstitial;
-    NSString *_adUnitID;
-    NSArray *_testDevices;
-    RCTPromiseResolveBlock _requestAdResolve;
-    RCTPromiseRejectBlock _requestAdReject;
     BOOL hasListeners;
 }
+GADInterstitialAd  *_interstitial;
 
 - (dispatch_queue_t)methodQueue
 {
@@ -49,39 +46,28 @@ RCT_EXPORT_MODULE();
 
 #pragma mark exported methods
 
-RCT_EXPORT_METHOD(setAdUnitID:(NSString *)adUnitID)
+RCT_EXPORT_METHOD(requestAd:(NSString*) adUnit)
 {
-    _adUnitID = adUnitID;
-}
-
-RCT_EXPORT_METHOD(setTestDevices:(NSArray *)testDevices)
-{
-    _testDevices = RNAdMobProcessTestDevices(testDevices, kGADSimulatorID);
-}
-
-RCT_EXPORT_METHOD(requestAd:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-{
-    _requestAdResolve = nil;
-    _requestAdReject = nil;
-
-    if ([_interstitial hasBeenUsed] || _interstitial == nil) {
-        _requestAdResolve = resolve;
-        _requestAdReject = reject;
-
-        _interstitial = [[GADInterstitial alloc] initWithAdUnitID:_adUnitID];
-        _interstitial.delegate = self;
-
-        GADRequest *request = [GADRequest request];
-        request.testDevices = _testDevices;
-        [_interstitial loadRequest:request];
-    } else {
-        reject(@"E_AD_ALREADY_LOADED", @"Ad is already loaded.", nil);
+    if (_interstitial == nil) {
+      GADRequest *request = [GADRequest request];
+      [GADInterstitialAd loadWithAdUnitID:adUnit
+                                  request:request
+                        completionHandler:^(GADInterstitialAd *ad, NSError *error) {
+        if (error) {
+          NSDictionary *jsError = RCTJSErrorFromCodeMessageAndNSError(@"E_AD_REQUEST_FAILED", error.localizedDescription, error);
+          [self sendEventWithName:kEventAdFailedToLoad body:jsError];
+          return;
+        }
+        _interstitial = ad;
+        _interstitial.fullScreenContentDelegate = self;
+        [self sendEventWithName:kEventAdLoaded body:nil];
+      }];
     }
 }
 
 RCT_EXPORT_METHOD(showAd:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 {
-    if ([_interstitial isReady]) {
+    if (_interstitial) {
         [_interstitial presentFromRootViewController:[UIApplication sharedApplication].delegate.window.rootViewController];
         resolve(nil);
     }
@@ -92,7 +78,7 @@ RCT_EXPORT_METHOD(showAd:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRej
 
 RCT_EXPORT_METHOD(isReady:(RCTResponseSenderBlock)callback)
 {
-    callback(@[[NSNumber numberWithBool:[_interstitial isReady]]]);
+    callback(@[[NSNumber numberWithBool:_interstitial != nil]]);
 }
 
 - (void)startObserving
@@ -107,49 +93,31 @@ RCT_EXPORT_METHOD(isReady:(RCTResponseSenderBlock)callback)
 
 #pragma mark GADInterstitialDelegate
 
-- (void)interstitialDidReceiveAd:(__unused GADInterstitial *)ad
-{
-    if (hasListeners) {
-        [self sendEventWithName:kEventAdLoaded body:nil];
-    }
-    _requestAdResolve(nil);
+- (void)adDidRecordImpression:(id<GADFullScreenPresentingAd>)ad{
+  RCTLog(@"ADMob didRecord impression ad: %@", ad);
 }
 
-- (void)interstitial:(__unused GADInterstitial *)interstitial didFailToReceiveAdWithError:(GADRequestError *)error
-{
-    if (hasListeners) {
-        NSDictionary *jsError = RCTJSErrorFromCodeMessageAndNSError(@"E_AD_REQUEST_FAILED", error.localizedDescription, error);
-        [self sendEventWithName:kEventAdFailedToLoad body:jsError];
-    }
-    _requestAdReject(@"E_AD_REQUEST_FAILED", error.localizedDescription, error);
+- (void)ad:(id<GADFullScreenPresentingAd>)ad didFailToPresentFullScreenContentWithError:(NSError *)error{
+  if (hasListeners) {
+      NSDictionary *jsError = RCTJSErrorFromCodeMessageAndNSError(@"E_AD_REQUEST_FAILED", error.localizedDescription, error);
+      [self sendEventWithName:kEventAdFailedToLoad body:jsError];
+  }
 }
 
-- (void)interstitialWillPresentScreen:(__unused GADInterstitial *)ad
-{
-    if (hasListeners){
-        [self sendEventWithName:kEventAdOpened body:nil];
-    }
+- (void)adDidPresentFullScreenContent:(id<GADFullScreenPresentingAd>)ad{
+  if (hasListeners){
+      [self sendEventWithName:kEventAdOpened body:nil];
+  }
 }
 
-- (void)interstitialDidFailToPresentScreen:(__unused GADInterstitial *)ad
-{
-    if (hasListeners){
-        [self sendEventWithName:kEventAdFailedToOpen body:nil];
-    }
+- (void)adWillDismissFullScreenContent:(id<GADFullScreenPresentingAd>)ad{
+  if (hasListeners) {
+      [self sendEventWithName:kEventAdClosed body:nil];
+  }
 }
 
-- (void)interstitialWillDismissScreen:(__unused GADInterstitial *)ad
-{
-    if (hasListeners) {
-        [self sendEventWithName:kEventAdClosed body:nil];
-    }
-}
-
-- (void)interstitialWillLeaveApplication:(__unused GADInterstitial *)ad
-{
-    if (hasListeners) {
-        [self sendEventWithName:kEventAdLeftApplication body:nil];
-    }
+- (void)adDidDismissFullScreenContent:(id<GADFullScreenPresentingAd>)ad{
+  RCTLog(@"ADMob did Dismiss full Screen Content: %@", ad);
 }
 
 @end

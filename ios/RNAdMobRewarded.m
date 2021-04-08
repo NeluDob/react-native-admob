@@ -1,5 +1,6 @@
 #import "RNAdMobRewarded.h"
 #import "RNAdMobUtils.h"
+#import <React/RCTLog.h>
 
 #if __has_include(<React/RCTUtils.h>)
 #import <React/RCTUtils.h>
@@ -18,12 +19,11 @@ static NSString *const kEventVideoCompleted = @"rewardedVideoAdVideoCompleted";
 
 @implementation RNAdMobRewarded
 {
-    NSString *_adUnitID;
-    NSArray *_testDevices;
-    RCTPromiseResolveBlock _requestAdResolve;
-    RCTPromiseRejectBlock _requestAdReject;
     BOOL hasListeners;
 }
+
+GADRewardedAd *rewardedAd;
+
 
 - (dispatch_queue_t)methodQueue
 {
@@ -52,44 +52,39 @@ RCT_EXPORT_MODULE();
 
 #pragma mark exported methods
 
-RCT_EXPORT_METHOD(setAdUnitID:(NSString *)adUnitID)
+RCT_EXPORT_METHOD(requestAd: (NSString*) adUnit)
 {
-    _adUnitID = adUnitID;
-}
-
-RCT_EXPORT_METHOD(setTestDevices:(NSArray *)testDevices)
-{
-    _testDevices = RNAdMobProcessTestDevices(testDevices, kGADSimulatorID);
-}
-
-RCT_EXPORT_METHOD(requestAd:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-{
-    _requestAdResolve = resolve;
-    _requestAdReject = reject;
-
-    [GADRewardBasedVideoAd sharedInstance].delegate = self;
-    GADRequest *request = [GADRequest request];
-    request.testDevices = _testDevices;
-    [[GADRewardBasedVideoAd sharedInstance] loadRequest:request
-                                           withAdUnitID:_adUnitID];
+  GADRequest *request = [GADRequest request];
+  [GADRewardedAd loadWithAdUnitID:adUnit request:request completionHandler:^(GADRewardedAd *ad, NSError *error) {
+    if (error) {
+      NSDictionary *jsError = RCTJSErrorFromCodeMessageAndNSError(@"E_AD_REQUEST_FAILED", error.localizedDescription, error);
+      [self sendEventWithName:kEventAdFailedToLoad body:jsError];
+      return;
+    }
+    rewardedAd = ad;
+    rewardedAd.fullScreenContentDelegate = self;
+    [self sendEventWithName:kEventAdLoaded body:nil];
+  }];
 }
 
 RCT_EXPORT_METHOD(showAd:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 {
-    if ([[GADRewardBasedVideoAd sharedInstance] isReady]) {
-        UIWindow *keyWindow = [[UIApplication sharedApplication] keyWindow];
-        UIViewController *rootViewController = [keyWindow rootViewController];
-        [[GADRewardBasedVideoAd sharedInstance] presentFromRootViewController:rootViewController];
-        resolve(nil);
-    }
-    else {
-        reject(@"E_AD_NOT_READY", @"Ad is not ready.", nil);
-    }
+  if (rewardedAd) {
+    UIViewController *rootVC = [[[UIApplication sharedApplication] keyWindow] rootViewController];
+    [rewardedAd presentFromRootViewController:rootVC userDidEarnRewardHandler:^{
+      GADAdReward *reward = rewardedAd.adReward;
+      [self sendEventWithName:kEventRewarded body:@{@"type": reward.type, @"amount": reward.amount}];
+    }];
+    resolve(nil);
+  }
+  else {
+    reject(@"E_AD_NOT_READY", @"Ad is not ready.", nil);
+  }
 }
 
 RCT_EXPORT_METHOD(isReady:(RCTResponseSenderBlock)callback)
 {
-    callback(@[[NSNumber numberWithBool:[[GADRewardBasedVideoAd sharedInstance] isReady]]]);
+    callback(@[[NSNumber numberWithBool: rewardedAd != nil]]);
 }
 
 - (void)startObserving
@@ -104,64 +99,31 @@ RCT_EXPORT_METHOD(isReady:(RCTResponseSenderBlock)callback)
 
 #pragma mark GADRewardBasedVideoAdDelegate
 
-- (void)rewardBasedVideoAd:(__unused GADRewardBasedVideoAd *)rewardBasedVideoAd
-   didRewardUserWithReward:(GADAdReward *)reward {
-    if (hasListeners) {
-        [self sendEventWithName:kEventRewarded body:@{@"type": reward.type, @"amount": reward.amount}];
-    }
+- (void)adDidRecordImpression:(id<GADFullScreenPresentingAd>)ad{
+  RCTLog(@"ADMob didRecord impression ad: %@", ad);
 }
 
-- (void)rewardBasedVideoAdDidReceiveAd:(__unused GADRewardBasedVideoAd *)rewardBasedVideoAd
-{
-    if (hasListeners) {
-        [self sendEventWithName:kEventAdLoaded body:nil];
-    }
-    _requestAdResolve(nil);
+- (void)ad:(id<GADFullScreenPresentingAd>)ad didFailToPresentFullScreenContentWithError:(NSError *)error{
+  if (hasListeners) {
+      NSDictionary *jsError = RCTJSErrorFromCodeMessageAndNSError(@"E_AD_REQUEST_FAILED", error.localizedDescription, error);
+      [self sendEventWithName:kEventAdFailedToLoad body:jsError];
+  }
 }
 
-- (void)rewardBasedVideoAdDidOpen:(__unused GADRewardBasedVideoAd *)rewardBasedVideoAd
-{
-    if (hasListeners) {
-        [self sendEventWithName:kEventAdOpened body:nil];
-    }
+- (void)adDidPresentFullScreenContent:(id<GADFullScreenPresentingAd>)ad{
+  if (hasListeners){
+      [self sendEventWithName:kEventAdOpened body:nil];
+  }
 }
 
-- (void)rewardBasedVideoAdDidStartPlaying:(__unused GADRewardBasedVideoAd *)rewardBasedVideoAd
-{
-    if (hasListeners) {
-        [self sendEventWithName:kEventVideoStarted body:nil];
-    }
+- (void)adWillDismissFullScreenContent:(id<GADFullScreenPresentingAd>)ad{
+  if (hasListeners) {
+      [self sendEventWithName:kEventAdClosed body:nil];
+  }
 }
 
-- (void)rewardBasedVideoAdDidCompletePlaying:(__unused GADRewardBasedVideoAd *)rewardBasedVideoAd
-{
-    if (hasListeners) {
-        [self sendEventWithName:kEventVideoCompleted body:nil];
-    }
-}
-
-- (void)rewardBasedVideoAdDidClose:(__unused GADRewardBasedVideoAd *)rewardBasedVideoAd
-{
-    if (hasListeners) {
-        [self sendEventWithName:kEventAdClosed body:nil];
-    }
-}
-
-- (void)rewardBasedVideoAdWillLeaveApplication:(__unused GADRewardBasedVideoAd *)rewardBasedVideoAd
-{
-    if (hasListeners) {
-        [self sendEventWithName:kEventAdLeftApplication body:nil];
-    }
-}
-
-- (void)rewardBasedVideoAd:(__unused GADRewardBasedVideoAd *)rewardBasedVideoAd
-    didFailToLoadWithError:(NSError *)error
-{
-    if (hasListeners) {
-        NSDictionary *jsError = RCTJSErrorFromCodeMessageAndNSError(@"E_AD_FAILED_TO_LOAD", error.localizedDescription, error);
-        [self sendEventWithName:kEventAdFailedToLoad body:jsError];
-    }
-    _requestAdReject(@"E_AD_FAILED_TO_LOAD", error.localizedDescription, error);
+- (void)adDidDismissFullScreenContent:(id<GADFullScreenPresentingAd>)ad{
+  RCTLog(@"ADMob did Dismiss full Screen Content: %@", ad);
 }
 
 @end

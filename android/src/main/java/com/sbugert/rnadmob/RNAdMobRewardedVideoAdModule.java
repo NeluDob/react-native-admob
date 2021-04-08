@@ -2,7 +2,10 @@ package com.sbugert.rnadmob;
 
 import android.os.Handler;
 import android.os.Looper;
-import android.support.annotation.Nullable;
+import android.util.Log;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.Callback;
@@ -14,15 +17,19 @@ import com.facebook.react.bridge.ReadableArray;
 import com.facebook.react.bridge.ReadableNativeArray;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
+import com.google.android.gms.ads.AdError;
+import com.google.android.gms.ads.FullScreenContentCallback;
+import com.google.android.gms.ads.LoadAdError;
 import com.google.android.gms.ads.MobileAds;
-import com.google.android.gms.ads.reward.RewardedVideoAd;
-import com.google.android.gms.ads.reward.RewardedVideoAdListener;
-import com.google.android.gms.ads.reward.RewardItem;
 import com.google.android.gms.ads.AdRequest;
+import com.google.android.gms.ads.OnUserEarnedRewardListener;
+import com.google.android.gms.ads.rewarded.RewardItem;
+import com.google.android.gms.ads.rewarded.RewardedAd;
+import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback;
 
 import java.util.ArrayList;
 
-public class RNAdMobRewardedVideoAdModule extends ReactContextBaseJavaModule implements RewardedVideoAdListener {
+public class RNAdMobRewardedVideoAdModule extends ReactContextBaseJavaModule {
 
     public static final String REACT_CLASS = "RNAdMobRewarded";
 
@@ -35,11 +42,8 @@ public class RNAdMobRewardedVideoAdModule extends ReactContextBaseJavaModule imp
     public static final String EVENT_VIDEO_STARTED = "rewardedVideoAdVideoStarted";
     public static final String EVENT_VIDEO_COMPLETED = "rewardedVideoAdVideoCompleted";
 
-    RewardedVideoAd mRewardedVideoAd;
-    String adUnitID;
-    String[] testDevices;
-
-    private Promise mRequestAdPromise;
+    RewardedAd mRewardedVideoAd;
+    private ReactApplicationContext contextLocal;
 
     @Override
     public String getName() {
@@ -48,129 +52,63 @@ public class RNAdMobRewardedVideoAdModule extends ReactContextBaseJavaModule imp
 
     public RNAdMobRewardedVideoAdModule(ReactApplicationContext reactContext) {
         super(reactContext);
-    }
-
-    @Override
-    public void onRewarded(RewardItem rewardItem) {
-        WritableMap reward = Arguments.createMap();
-
-        reward.putInt("amount", rewardItem.getAmount());
-        reward.putString("type", rewardItem.getType());
-
-        sendEvent(EVENT_REWARDED, reward);
-    }
-
-    @Override
-    public void onRewardedVideoAdLoaded() {
-        sendEvent(EVENT_AD_LOADED, null);
-        if (mRequestAdPromise != null) {
-          mRequestAdPromise.resolve(null);
-          mRequestAdPromise = null;
-        }
-    }
-
-    @Override
-    public void onRewardedVideoAdOpened() {
-        sendEvent(EVENT_AD_OPENED, null);
-    }
-
-    @Override
-    public void onRewardedVideoStarted() {
-        sendEvent(EVENT_VIDEO_STARTED, null);
-    }
-
-    @Override
-    public void onRewardedVideoAdClosed() {
-        sendEvent(EVENT_AD_CLOSED, null);
-    }
-
-    @Override
-    public void onRewardedVideoAdLeftApplication() {
-        sendEvent(EVENT_AD_LEFT_APPLICATION, null);
-    }
-
-    @Override
-    public void onRewardedVideoCompleted() {
-        sendEvent(EVENT_VIDEO_COMPLETED, null);
-    }
-
-    @Override
-    public void onRewardedVideoAdFailedToLoad(int errorCode) {
-        String errorString = "ERROR_UNKNOWN";
-        String errorMessage = "Unknown error";
-        switch (errorCode) {
-            case AdRequest.ERROR_CODE_INTERNAL_ERROR:
-              errorString = "ERROR_CODE_INTERNAL_ERROR";
-              errorMessage = "Internal error, an invalid response was received from the ad server.";
-              break;
-            case AdRequest.ERROR_CODE_INVALID_REQUEST:
-              errorString = "ERROR_CODE_INVALID_REQUEST";
-              errorMessage = "Invalid ad request, possibly an incorrect ad unit ID was given.";
-              break;
-            case AdRequest.ERROR_CODE_NETWORK_ERROR:
-              errorString = "ERROR_CODE_NETWORK_ERROR";
-              errorMessage = "The ad request was unsuccessful due to network connectivity.";
-              break;
-            case AdRequest.ERROR_CODE_NO_FILL:
-              errorString = "ERROR_CODE_NO_FILL";
-              errorMessage = "The ad request was successful, but no ad was returned due to lack of ad inventory.";
-              break;
-        }
-        WritableMap event = Arguments.createMap();
-        WritableMap error = Arguments.createMap();
-        event.putString("message", errorMessage);
-        sendEvent(EVENT_AD_FAILED_TO_LOAD, event);
-        if (mRequestAdPromise != null) {
-          mRequestAdPromise.reject(errorString, errorMessage);
-          mRequestAdPromise = null;
-        }
+        contextLocal = reactContext;
     }
 
     private void sendEvent(String eventName, @Nullable WritableMap params) {
         getReactApplicationContext().getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit(eventName, params);
     }
 
-    @ReactMethod
-    public void setAdUnitID(String adUnitID) {
-        this.adUnitID = adUnitID;
-    }
 
     @ReactMethod
-    public void setTestDevices(ReadableArray testDevices) {
-      ReadableNativeArray nativeArray = (ReadableNativeArray)testDevices;
-      ArrayList<Object> list = nativeArray.toArrayList();
-      this.testDevices = list.toArray(new String[list.size()]);
-    }
-
-    @ReactMethod
-    public void requestAd(final Promise promise) {
+    public void requestAd(final String adUnitID) {
         new Handler(Looper.getMainLooper()).post(new Runnable() {
             @Override
             public void run() {
-                RNAdMobRewardedVideoAdModule.this.mRewardedVideoAd = MobileAds.getRewardedVideoAdInstance(getCurrentActivity());
+                AdRequest adRequest = new AdRequest.Builder().build();
 
-                RNAdMobRewardedVideoAdModule.this.mRewardedVideoAd.setRewardedVideoAdListener(RNAdMobRewardedVideoAdModule.this);
-
-                if (mRewardedVideoAd.isLoaded()) {
-                    promise.reject("E_AD_ALREADY_LOADED", "Ad is already loaded.");
-                } else {
-                    mRequestAdPromise = promise;
-
-                    AdRequest.Builder adRequestBuilder = new AdRequest.Builder();
-
-                    if (testDevices != null) {
-                        for (int i = 0; i < testDevices.length; i++) {
-                            String testDevice = testDevices[i];
-                            if (testDevice == "SIMULATOR") {
-                                testDevice = AdRequest.DEVICE_ID_EMULATOR;
-                            }
-                            adRequestBuilder.addTestDevice(testDevice);
-                        }
+                RewardedAd.load(contextLocal, adUnitID, adRequest, new RewardedAdLoadCallback() {
+                    @Override
+                    public void onAdFailedToLoad(@NonNull LoadAdError loadAdError) {
+                        // Handle the error.
+                        WritableMap event = Arguments.createMap();
+                        WritableMap error = Arguments.createMap();
+                        event.putString("message", loadAdError.getMessage());
+                        sendEvent(EVENT_AD_FAILED_TO_LOAD, event);
+                        mRewardedVideoAd = null;
                     }
 
-                    AdRequest adRequest = adRequestBuilder.build();
-                    mRewardedVideoAd.loadAd(adUnitID, adRequest);
-                }
+                    @Override
+                    public void onAdLoaded(@NonNull RewardedAd rewardedAd) {
+                        mRewardedVideoAd = rewardedAd;
+                        sendEvent(EVENT_AD_LOADED, null);
+                        mRewardedVideoAd.setFullScreenContentCallback(new FullScreenContentCallback() {
+                            @Override
+                            public void onAdShowedFullScreenContent() {
+                                // Called when ad is shown.
+                                sendEvent(EVENT_AD_OPENED, null);
+                                mRewardedVideoAd = null;
+                            }
+
+                            @Override
+                            public void onAdFailedToShowFullScreenContent(AdError adError) {
+                                // Called when ad fails to show.
+                                WritableMap event = Arguments.createMap();
+                                WritableMap error = Arguments.createMap();
+                                event.putString("message", adError.getMessage());
+                                sendEvent(EVENT_AD_FAILED_TO_LOAD, event);
+                            }
+
+                            @Override
+                            public void onAdDismissedFullScreenContent() {
+                                // Called when ad is dismissed.
+                                // Don't forget to set the ad reference to null so you
+                                // don't show the ad a second time.
+                                sendEvent(EVENT_AD_CLOSED, null);
+                            }
+                        });
+                    }
+                });
             }
         });
     }
@@ -180,8 +118,19 @@ public class RNAdMobRewardedVideoAdModule extends ReactContextBaseJavaModule imp
         new Handler(Looper.getMainLooper()).post(new Runnable() {
             @Override
             public void run() {
-                if (mRewardedVideoAd != null && mRewardedVideoAd.isLoaded()) {
-                    mRewardedVideoAd.show();
+                if (mRewardedVideoAd != null) {
+
+                    mRewardedVideoAd.show(contextLocal.getCurrentActivity(), new OnUserEarnedRewardListener() {
+                        @Override
+                        public void onUserEarnedReward(@NonNull RewardItem rewardItem) {
+                            WritableMap reward = Arguments.createMap();
+
+                            reward.putInt("amount", rewardItem.getAmount());
+                            reward.putString("type", rewardItem.getType());
+
+                            sendEvent(EVENT_REWARDED, reward);
+                        }
+                    });
                     promise.resolve(null);
                 } else {
                     promise.reject("E_AD_NOT_READY", "Ad is not ready.");
@@ -196,7 +145,7 @@ public class RNAdMobRewardedVideoAdModule extends ReactContextBaseJavaModule imp
             @Override
             public void run() {
                 if (mRewardedVideoAd != null) {
-                    callback.invoke(mRewardedVideoAd.isLoaded());
+                    callback.invoke(true);
                 } else {
                     callback.invoke(false);
                 }

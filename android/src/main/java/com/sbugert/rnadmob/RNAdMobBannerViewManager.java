@@ -1,8 +1,9 @@
 package com.sbugert.rnadmob;
 
 import android.content.Context;
-import android.support.annotation.Nullable;
 import android.view.View;
+
+import androidx.annotation.Nullable;
 
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.ReactContext;
@@ -20,9 +21,9 @@ import com.google.android.gms.ads.AdListener;
 import com.google.android.gms.ads.AdRequest;
 import com.google.android.gms.ads.AdSize;
 import com.google.android.gms.ads.AdView;
+import com.google.android.gms.ads.LoadAdError;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Map;
 
 class ReactAdView extends ReactViewGroup {
@@ -57,25 +58,10 @@ class ReactAdView extends ReactViewGroup {
             }
 
             @Override
-            public void onAdFailedToLoad(int errorCode) {
-                String errorMessage = "Unknown error";
-                switch (errorCode) {
-                    case AdRequest.ERROR_CODE_INTERNAL_ERROR:
-                        errorMessage = "Internal error, an invalid response was received from the ad server.";
-                        break;
-                    case AdRequest.ERROR_CODE_INVALID_REQUEST:
-                        errorMessage = "Invalid ad request, possibly an incorrect ad unit ID was given.";
-                        break;
-                    case AdRequest.ERROR_CODE_NETWORK_ERROR:
-                        errorMessage = "The ad request was unsuccessful due to network connectivity.";
-                        break;
-                    case AdRequest.ERROR_CODE_NO_FILL:
-                        errorMessage = "The ad request was successful, but no ad was returned due to lack of ad inventory.";
-                        break;
-                }
+            public void onAdFailedToLoad(LoadAdError adError) {
                 WritableMap event = Arguments.createMap();
                 WritableMap error = Arguments.createMap();
-                error.putString("message", errorMessage);
+                error.putString("message", adError.getMessage());
                 event.putMap("error", error);
                 sendEvent(RNAdMobBannerViewManager.EVENT_AD_FAILED_TO_LOAD, event);
             }
@@ -90,10 +76,6 @@ class ReactAdView extends ReactViewGroup {
                 sendEvent(RNAdMobBannerViewManager.EVENT_AD_CLOSED, null);
             }
 
-            @Override
-            public void onAdLeftApplication() {
-                sendEvent(RNAdMobBannerViewManager.EVENT_AD_LEFT_APPLICATION, null);
-            }
         });
         this.addView(this.adView);
     }
@@ -104,7 +86,7 @@ class ReactAdView extends ReactViewGroup {
         ReactContext reactContext = (ReactContext) getContext();
         WritableMap event = Arguments.createMap();
         AdSize adSize = this.adView.getAdSize();
-        if (this.adSize == AdSize.SMART_BANNER) {
+        if (this.adSize == AdSize. getCurrentOrientationAnchoredAdaptiveBannerAdSize(reactContext, this.getWidth())) {
             width = (int) PixelUtil.toDIPFromPixel(adSize.getWidthInPixels(reactContext));
             height = (int) PixelUtil.toDIPFromPixel(adSize.getHeightInPixels(reactContext));
         } else {
@@ -132,7 +114,6 @@ class ReactAdView extends ReactViewGroup {
                 if (testDevice == "SIMULATOR") {
                     testDevice = AdRequest.DEVICE_ID_EMULATOR;
                 }
-                adRequestBuilder.addTestDevice(testDevice);
             }
         }
         AdRequest adRequest = adRequestBuilder.build();
@@ -240,11 +221,7 @@ public class RNAdMobBannerViewManager extends ViewGroupManager<ReactAdView> {
                 return AdSize.FULL_BANNER;
             case "leaderBoard":
                 return AdSize.LEADERBOARD;
-            case "smartBannerPortrait":
-                return AdSize.SMART_BANNER;
-            case "smartBannerLandscape":
-                return AdSize.SMART_BANNER;
-            case "smartBanner":
+            case "smartBannerLandscape": case  "smartBannerPortrait": case "smartBanner":
                 return AdSize.SMART_BANNER;
             default:
                 return AdSize.BANNER;

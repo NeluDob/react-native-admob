@@ -57,7 +57,6 @@
         }
     }
     GADRequest *request = [GADRequest request];
-    request.testDevices = _testDevices;
     [_bannerView loadRequest:request];
 }
 
@@ -75,46 +74,39 @@
 # pragma mark GADBannerViewDelegate
 
 /// Tells the delegate an ad request loaded an ad.
-- (void)adViewDidReceiveAd:(__unused GADBannerView *)adView
-{
-   if (self.onAdLoaded) {
-       self.onAdLoaded(@{});
-   }
+- (void)bannerViewDidReceiveAd:(GADBannerView *)bannerView{
+  if (self.onAdLoaded) {
+      self.onAdLoaded(@{});
+  }
+
 }
 
-/// Tells the delegate an ad request failed.
-- (void)adView:(__unused GADBannerView *)adView
-didFailToReceiveAdWithError:(GADRequestError *)error
-{
-    if (self.onAdFailedToLoad) {
-        self.onAdFailedToLoad(@{ @"error": @{ @"message": [error localizedDescription] } });
-    }
+- (void)bannerView:(GADBannerView *)bannerView didFailToReceiveAdWithError:(NSError *)error{
+  if (self.onAdFailedToLoad) {
+      self.onAdFailedToLoad(@{ @"error": @{ @"message": [error localizedDescription] } });
+  }
+
 }
 
-/// Tells the delegate that a full screen view will be presented in response
-/// to the user clicking on an ad.
-- (void)adViewWillPresentScreen:(__unused GADBannerView *)adView
-{
-    if (self.onAdOpened) {
-        self.onAdOpened(@{});
-    }
+///// Tells the delegate that a full screen view will be presented in response
+///// to the user clicking on an ad.
+
+- (void)bannerViewWillPresentScreen:(GADBannerView *)bannerView{
+  if (self.onAdOpened) {
+      self.onAdOpened(@{});
+  }
 }
 
-/// Tells the delegate that the full screen view will be dismissed.
-- (void)adViewWillDismissScreen:(__unused GADBannerView *)adView
-{
-    if (self.onAdClosed) {
-        self.onAdClosed(@{});
-    }
+///// Tells the delegate that the full screen view will be dismissed.
+- (void)bannerViewWillDismissScreen:(GADBannerView *)bannerView{
+  if (self.onAdClosed) {
+      self.onAdClosed(@{});
+  }
 }
 
-/// Tells the delegate that a user click will open another app (such as
-/// the App Store), backgrounding the current app.
-- (void)adViewWillLeaveApplication:(__unused GADBannerView *)adView
-{
-    if (self.onAdLeftApplication) {
-        self.onAdLeftApplication(@{});
-    }
+
+- (void)bannerViewDidRecordImpression:(GADBannerView *)bannerView{
+  
 }
 
 # pragma mark GADAdSizeDelegate
