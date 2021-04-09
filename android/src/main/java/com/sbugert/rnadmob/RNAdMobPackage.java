@@ -29,7 +29,7 @@ public class RNAdMobPackage implements ReactPackage {
     @Override
     public List<ViewManager> createViewManagers(ReactApplicationContext reactContext) {
       return Arrays.<ViewManager>asList(
-          new RNAdMobBannerViewManager(),
+          new RNAdMobBannerViewManager()
       );
     }
 }
