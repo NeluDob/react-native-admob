@@ -30,7 +30,6 @@ public class RNAdMobPackage implements ReactPackage {
     public List<ViewManager> createViewManagers(ReactApplicationContext reactContext) {
       return Arrays.<ViewManager>asList(
           new RNAdMobBannerViewManager(),
-          new RNPublisherBannerViewManager()
       );
     }
 }
