@@ -48,21 +48,19 @@ RCT_EXPORT_MODULE();
 
 RCT_EXPORT_METHOD(requestAd:(NSString*) adUnit)
 {
-    if (_interstitial == nil) {
-      GADRequest *request = [GADRequest request];
-      [GADInterstitialAd loadWithAdUnitID:adUnit
-                                  request:request
-                        completionHandler:^(GADInterstitialAd *ad, NSError *error) {
+    GADRequest *request = [GADRequest request];
+    [GADInterstitialAd loadWithAdUnitID:adUnit
+                                request:request
+                      completionHandler:^(GADInterstitialAd *ad, NSError *error) {
         if (error) {
-          NSDictionary *jsError = RCTJSErrorFromCodeMessageAndNSError(@"E_AD_REQUEST_FAILED", error.localizedDescription, error);
-          [self sendEventWithName:kEventAdFailedToLoad body:jsError];
-          return;
+            NSDictionary *jsError = RCTJSErrorFromCodeMessageAndNSError(@"E_AD_REQUEST_FAILED", error.localizedDescription, error);
+            [self sendEventWithName:kEventAdFailedToLoad body:jsError];
+            return;
         }
         _interstitial = ad;
         _interstitial.fullScreenContentDelegate = self;
         [self sendEventWithName:kEventAdLoaded body:nil];
-      }];
-    }
+    }];
 }
 
 RCT_EXPORT_METHOD(showAd:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
